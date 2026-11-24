@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>House Price Predictor – Live Demo</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f5f7fb;--card:#fff;--text:#12172b;--muted:#64708a;--accent:#2f5bd8;--pos:#1f9d6b;--neg:#d6454f;--line:#e2e7f1}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#0f1424;--card:#171e33;--text:#e8ecf8;--muted:#98a3c0;--accent:#6c8cff;--pos:#3ccf93;--neg:#ff6b75;--line:#283150}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#0f1424;--card:#171e33;--text:#e8ecf8;--muted:#98a3c0;--accent:#6c8cff;--pos:#3ccf93;--neg:#ff6b75;--line:#283150}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.45}
+.wrap{max-width:1000px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.6rem;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 18px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+.card h2{font-size:1rem;margin:0 0 12px}
+.row{margin-bottom:14px}
+.row label{display:flex;justify-content:space-between;font-size:.88rem;margin-bottom:4px}
+.row label b{color:var(--accent);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.price{font-size:2.4rem;font-weight:700;color:var(--accent);margin:2px 0 6px;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted);font-size:.85rem}
+.presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:7px 12px;border-radius:10px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+.bar{display:grid;grid-template-columns:130px 1fr 70px;gap:8px;align-items:center;font-size:.8rem;margin:6px 0}
+.track{position:relative;height:12px;background:var(--bg);border-radius:6px}
+.track i{position:absolute;top:0;height:100%;border-radius:6px}
+.track::after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--muted)}
+.bar span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.note{font-size:.78rem;color:var(--muted);margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏠 California House Price Predictor</h1>
+  <p class="sub">Project 05 live demo. Move the sliders and the prediction updates instantly.</p>
+  <div class="grid">
+    <div class="card">
+      <h2>House features</h2>
+      <div class="presets">
+        <button data-p="avg">Typical block</button>
+        <button data-p="bay">Bay Area</button>
+        <button data-p="la">Los Angeles</button>
+        <button data-p="rural">Inland rural</button>
+      </div>
+      <div id="sliders"></div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>Predicted median house value</h2>
+        <div class="price" id="price">$0</div>
+        <div class="muted" id="delta"></div>
+      </div>
+      <div class="card">
+        <h2>What moved the price?</h2>
+        <div class="muted" style="margin-bottom:6px">Effect of each feature versus a typical block</div>
+        <div id="bars"></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Model: Linear Regression trained on the California Housing dataset (scikit-learn). This web demo runs the model's coefficients directly in your browser. The Streamlit app (app.py) additionally offers a Decision Tree and the dataset explorer. Prices are block-group medians from the 1990 census, so values are low by today’s standards.</p>
+</div>
+<script>
+const F=[
+ {k:"MedInc",n:"Median income ($10k)",min:0.5,max:10,step:0.1,def:3.53,c:0.4367},
+ {k:"HouseAge",n:"House age (years)",min:1,max:52,step:1,def:29,c:0.00944},
+ {k:"AveRooms",n:"Avg rooms per household",min:2,max:10,step:0.1,def:5.23,c:-0.1073},
+ {k:"AveBedrms",n:"Avg bedrooms per household",min:0.8,max:2.5,step:0.05,def:1.05,c:0.6451},
+ {k:"Population",n:"Block population",min:100,max:6000,step:50,def:1166,c:-0.00000397},
+ {k:"AveOccup",n:"Avg occupants per household",min:1,max:6,step:0.1,def:2.82,c:-0.00379},
+ {k:"Latitude",n:"Latitude",min:32.5,max:41.9,step:0.05,def:34.26,c:-0.4213},
+ {k:"Longitude",n:"Longitude",min:-124.3,max:-114.3,step:0.05,def:-118.49,c:-0.4345}
+];
+const B=-36.94;
+const P={
+ avg:null,
+ bay:{MedInc:6.5,HouseAge:30,AveRooms:5.5,AveBedrms:1.05,Population:1500,AveOccup:2.8,Latitude:37.77,Longitude:-122.42},
+ la:{MedInc:4.0,HouseAge:32,AveRooms:4.8,AveBedrms:1.05,Population:1800,AveOccup:3.2,Latitude:34.05,Longitude:-118.25},
+ rural:{MedInc:2.3,HouseAge:22,AveRooms:5.5,AveBedrms:1.1,Population:900,AveOccup:3.0,Latitude:36.0,Longitude:-119.5}
+};
+const v={};
+const $=id=>document.getElementById(id);
+const fmt=x=>"$"+Math.round(x).toLocaleString("en-US");
+const pred=o=>Math.max(0,(B+F.reduce((s,f)=>s+f.c*o[f.k],0)))*100000;
+const base={};F.forEach(f=>base[f.k]=f.def);
+const basePrice=pred(base);
+
+F.forEach(f=>{
+  v[f.k]=f.def;
+  const d=document.createElement("div");d.className="row";
+  d.innerHTML=`<label><span>${f.n}</span><b id="v_${f.k}"></b></label>
+  <input type="range" id="s_${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.def}">`;
+  $("sliders").appendChild(d);
+  $("s_"+f.k).addEventListener("input",e=>{v[f.k]=parseFloat(e.target.value);render();});
+});
+
+function render(){
+  F.forEach(f=>{$("v_"+f.k).textContent=v[f.k].toLocaleString("en-US",{maximumFractionDigits:2});});
+  const p=pred(v);
+  $("price").textContent=fmt(p);
+  const d=p-basePrice;
+  $("delta").textContent=(d>=0?"+":"−")+fmt(Math.abs(d)).slice(0)+" vs. typical block ("+fmt(basePrice)+")";
+  const eff=F.map(f=>({n:f.n,e:f.c*(v[f.k]-f.def)*100000}));
+  const m=Math.max(1,...eff.map(x=>Math.abs(x.e)));
+  $("bars").innerHTML=eff.map(x=>{
+    const w=Math.abs(x.e)/m*50, pos=x.e>=0;
+    return `<div class="bar"><span>${x.n.replace(/ \(.*\)/,"")}</span>
+    <div class="track"><i style="${pos?"left:50%":"right:50%"};width:${w}%;background:var(${pos?"--pos":"--neg"})"></i></div>
+    <span>${(pos?"+":"−")+fmt(Math.abs(x.e))}</span></div>`;}).join("");
+}
+document.querySelectorAll("[data-p]").forEach(b=>b.addEventListener("click",()=>{
+  const o=P[b.dataset.p]||base;
+  F.forEach(f=>{v[f.k]=o[f.k];$("s_"+f.k).value=o[f.k];});
+  render();
+}));
+render();
+</script>
+</body>
+</html>
